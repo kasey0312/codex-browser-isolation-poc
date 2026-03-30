@@ -1,0 +1,129 @@
+name: codex-browser-isolation
+
+services:
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --accesslog=true
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+      - --ping=true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./deploy/traefik/acme.json:/letsencrypt/acme.json
+    networks:
+      - ingress
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    image: ${APP_IMAGE_NAME:-ghcr.io/example/codex-browser-isolation}:${IMAGE_TAG:-prod-prep}
+    restart: unless-stopped
+    env_file:
+      - ./deploy/env/app.env
+    environment:
+      NODE_ENV: production
+    volumes:
+      - app-runtime:/app/.runtime
+    networks:
+      - ingress
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=codex-browser-isolation_ingress
+      - traefik.http.routers.browser-isolation-web.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.browser-isolation-web.entrypoints=web
+      - traefik.http.routers.browser-isolation-web.middlewares=redirect-to-https@docker
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.routers.browser-isolation.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.browser-isolation.entrypoints=websecure
+      - traefik.http.routers.browser-isolation.tls=true
+      - traefik.http.routers.browser-isolation.tls.certresolver=letsencrypt
+      - traefik.http.routers.browser-isolation.middlewares=secure-headers@file,app-compress@docker
+      - traefik.http.middlewares.app-compress.compress=true
+      - traefik.http.services.browser-isolation.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/ready').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      traefik:
+        condition: service_healthy
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    profiles: ["keycloak"]
+    restart: unless-stopped
+    command:
+      - start
+      - --http-enabled=true
+      - --hostname=https://${KEYCLOAK_HOST}
+      - --import-realm
+    env_file:
+      - ./deploy/env/keycloak.env
+    volumes:
+      - ./deploy/keycloak/realm-import:/opt/keycloak/data/import:ro
+    networks:
+      - ingress
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=codex-browser-isolation_ingress
+      - traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOST}`)
+      - traefik.http.routers.keycloak.entrypoints=websecure
+      - traefik.http.routers.keycloak.tls=true
+      - traefik.http.routers.keycloak.tls.certresolver=letsencrypt
+      - traefik.http.routers.keycloak.middlewares=secure-headers@file,keycloak-compress@docker
+      - traefik.http.middlewares.keycloak-compress.compress=true
+      - traefik.http.services.keycloak.loadbalancer.server.port=8080
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  keycloak-db:
+    image: postgres:16-alpine
+    profiles: ["keycloak"]
+    restart: unless-stopped
+    env_file:
+      - ./deploy/env/keycloak.env
+    volumes:
+      - keycloak-db:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+networks:
+  ingress:
+  internal:
+    internal: true
+
+volumes:
+  app-runtime:
+  keycloak-db:

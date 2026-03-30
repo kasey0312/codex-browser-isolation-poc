@@ -1,0 +1,50 @@
+{
+  "realm": "codex-browser-isolation",
+  "enabled": true,
+  "displayName": "Codex Browser Isolation",
+  "registrationAllowed": false,
+  "rememberMe": true,
+  "resetPasswordAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "codex-browser-isolation-web",
+      "name": "Codex Browser Isolation Web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "redirectUris": [
+        "https://browser.example.com/*"
+      ],
+      "webOrigins": [
+        "https://browser.example.com"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "browser-user",
+        "description": "Baseline access for browser isolation operators"
+      },
+      {
+        "name": "browser-admin",
+        "description": "Administrative access for browser isolation operators"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "prod-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": [
+        "browser-admin"
+      ]
+    }
+  ]
+}

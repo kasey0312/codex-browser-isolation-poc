@@ -1,0 +1,23 @@
+title = "LangGraph Gemini Browser Isolation POC"
+max_users = 4
+
+[auth]
+jwt_issuer = "langgraph-gemini-browser-isolation-poc"
+jwt_audience = "langgraph-gemini-browser-isolation-users"
+access_token_ttl_seconds = 28800
+
+[agent]
+model = "gemini-2.5-flash"
+instruction_prefix = "You control a dedicated browser automation sandbox for a single authenticated user. Use the direct browser tools you were given for navigation, reading, typing, and clicking. Keep responses concise and include what you changed in the browser."
+
+[browser]
+default_url = "https://example.com"
+headless = true
+viewport_width = 1440
+viewport_height = 900
+preview_poll_ms = 1500
+remote_debugging_port_base = 9333
+
+[live_view]
+mode = "novnc"
+notes = "Preferred runtime is one Docker browser container per user, with dedicated Selenium + CDP + noVNC endpoints. Screenshot preview remains available as a fallback API and for tests."
